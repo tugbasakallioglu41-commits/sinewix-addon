@@ -1,11 +1,14 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const axios = require("axios");
 
+// Sinewix / Anthology Veri Kaynağı
+const ANTHOLOGY_RAW = "https://raw.githubusercontent.com/falsisdev/anthology/main";
+
 const builder = new addonBuilder({
   id: "org.sinewix.official.addon",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "Sinewix TR Addon",
-  description: "Nuvio, Stremio ve Mind IPTV için donmasız Türkçe içerik eklentisi",
+  description: "Nuvio, Stremio ve Mind IPTV için canlı Sinewix Türkçe içerik eklentisi",
   resources: ["catalog", "stream"],
   types: ["movie", "series"],
   catalogs: [
@@ -15,68 +18,73 @@ const builder = new addonBuilder({
   idPrefixes: ["snx_"]
 });
 
-// 1. KATALOG HANDLER
+// 1. KATALOG HANDLER (Canlı Sinewix İçeriklerini Çeker)
 builder.defineCatalogHandler(async ({ type, id }) => {
-  if (type === "movie" && id === "sinewix_movies") {
-    return {
-      metas: [
-        {
-          id: "snx_sample_1",
-          type: "movie",
-          name: "Sintel (Örnek Test Filmi)",
-          poster: "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg",
-          description: "Sinewix ve Nuvio akış test filmi."
-        },
-        {
-          id: "snx_sample_2",
-          type: "movie",
-          name: "Tears of Steel (Örnek Test Filmi)",
-          poster: "https://upload.wikimedia.org/wikipedia/commons/7/70/Tears_of_Steel_poster.jpg",
-          description: "Sinewix 4K/HD akış test filmi."
-        }
-      ]
-    };
-  }
-  
-  if (type === "series" && id === "sinewix_series") {
-    return {
-      metas: [
-        {
-          id: "snx_sample_series",
-          type: "series",
-          name: "Örnek Türkçe Dizi",
-          poster: "https://image.tmdb.org/t/p/w500/1E5baA2A161R22C9fT232.jpg",
-          description: "Sinewix test dizisi."
-        }
-      ]
-    };
-  }
+  try {
+    let fileUrl = "";
+    if (type === "movie" && id === "sinewix_movies") {
+      fileUrl = `${ANTHOLOGY_RAW}/data/movies.json`;
+    } else if (type === "series" && id === "sinewix_series") {
+      fileUrl = `${ANTHOLOGY_RAW}/data/series.json`;
+    }
 
-  return { metas: [] };
+    if (!fileUrl) return { metas: [] };
+
+    const response = await axios.get(fileUrl, { timeout: 8000 });
+    const items = response.data || [];
+
+    // Sinewix listesindeki ilk 60 içeriği haritalandırıyoruz
+    const metas = items.slice(0, 60).map((item, idx) => {
+      const contentId = item.id ? `snx_${item.id}` : `snx_${idx}`;
+      return {
+        id: contentId,
+        type: type,
+        name: item.title || item.name || "Türkçe İçerik",
+        poster: item.poster || item.image || "",
+        description: item.description || "Sinewix Türkçe Dizi / Film"
+      };
+    });
+
+    return { metas };
+  } catch (err) {
+    console.error("[Katalog Çekme Hatası]:", err.message);
+    return { metas: [] };
+  }
 });
 
-// 2. STREAM HANDLER (Gerçek m3u8 ve mp4 akışları)
+// 2. STREAM HANDLER (Sinewix Akış Bağlantılarını Çözer)
 builder.defineStreamHandler(async ({ type, id }) => {
-  if (id === "snx_sample_1") {
-    return {
-      streams: [
-        {
-          title: "Sinewix 1080p - HLS (Fast)",
-          url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
-        }
-      ]
-    };
-  }
-
-  if (id === "snx_sample_2") {
-    return {
-      streams: [
-        {
-          title: "Sinewix 720p - Direct Stream",
-          url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
-        }
-      ]
-    };
+  if (id.startsWith("snx_")) {
+    try {
+      const cleanId = id.replace("snx_", "");
+      
+      // Anthology / Sinewix stream resolver endpoint'i
+      const streamResolverUrl = `https://raw.githubusercontent.com/falsisdev/anthology/main/data/streams/${cleanId}.json`;
+      const res = await axios.get(streamResolverUrl, { timeout: 5000 });
+      
+      if (res.data && res.data.url) {
+        return {
+          streams: [
+            {
+              title: "Sinewix HD (HLS Akış)",
+              type: "m3u8",
+              url: res.data.url,
+              behaviorHints: {
+                notResponseLocation: true,
+                proxyHeaders: {
+                  request: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "Referer": "https://sinewix.com/"
+                  }
+                }
+              }
+            }
+          ]
+        };
+      }
+    } catch (err) {
+      console.error("[Stream Çözme Hatası]:", err.message);
+    }
   }
 
   return { streams: [] };
@@ -84,11 +92,10 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
 const PORT = process.env.PORT || 7000;
 
-// CORS Başlıkları ile Sunucuyu Başlatma
 const addonInterface = builder.getInterface();
 serveHTTP(addonInterface, { 
   port: PORT,
-  cors: true // CORS Güvenlik Engelini Aşmak İçin ŞART
+  cors: true 
 });
 
-console.log(`Sinewix Eklentisi ${PORT} portunda başarıyla başlatıldı.`);
+console.log(`Sinewix Canlı Eklenti ${PORT} portunda yayında.`);
