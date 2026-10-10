@@ -1,89 +1,94 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const axios = require("axios");
 
-// Sinewix / Anthology API Yapılandırması
-const SINEWIX_API_BASE = "https://raw.githubusercontent.com/falsisdev/anthology/main";
-
 const builder = new addonBuilder({
-  id: "org.sinewix.custom.addon",
+  id: "org.sinewix.official.addon",
   version: "1.0.0",
   name: "Sinewix TR Addon",
-  description: "Nuvio ve Stremio için yüksek hızlı Sinewix Türkçe film ve dizi eklentisi",
+  description: "Nuvio, Stremio ve Mind IPTV için donmasız Türkçe içerik eklentisi",
   resources: ["catalog", "stream"],
   types: ["movie", "series"],
   catalogs: [
     { type: "movie", id: "sinewix_movies", name: "Sinewix Filmler" },
     { type: "series", id: "sinewix_series", name: "Sinewix Diziler" }
-  ]
+  ],
+  idPrefixes: ["snx_"]
 });
 
-// 1. KATALOG HANDLER (Sinewix içerik listesini getirir)
+// 1. KATALOG HANDLER
 builder.defineCatalogHandler(async ({ type, id }) => {
-  try {
-    let targetEndpoint = "";
-    if (type === "movie" && id === "sinewix_movies") {
-      targetEndpoint = `${SINEWIX_API_BASE}/data/movies.json`;
-    } else if (type === "series" && id === "sinewix_series") {
-      targetEndpoint = `${SINEWIX_API_BASE}/data/series.json`;
-    }
-
-    if (!targetEndpoint) return { metas: [] };
-
-    const res = await axios.get(targetEndpoint, { timeout: 10000 });
-    const items = res.data || [];
-
-    const metas = items.slice(0, 50).map((item, index) => {
-      const cleanId = item.id ? `snx_${item.id}` : `snx_${index}`;
-      return {
-        id: cleanId,
-        type: type,
-        name: item.title || item.name || "Sinewix İçerik",
-        poster: item.poster || item.image || "",
-        description: item.description || "Sinewix Türkçe İçerik"
-      };
-    });
-
-    return { metas };
-  } catch (err) {
-    console.error("[Katalog Hatası]:", err.message);
-    return { metas: [] };
+  if (type === "movie" && id === "sinewix_movies") {
+    return {
+      metas: [
+        {
+          id: "snx_sample_1",
+          type: "movie",
+          name: "Sintel (Örnek Test Filmi)",
+          poster: "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg",
+          description: "Sinewix ve Nuvio akış test filmi."
+        },
+        {
+          id: "snx_sample_2",
+          type: "movie",
+          name: "Tears of Steel (Örnek Test Filmi)",
+          poster: "https://upload.wikimedia.org/wikipedia/commons/7/70/Tears_of_Steel_poster.jpg",
+          description: "Sinewix 4K/HD akış test filmi."
+        }
+      ]
+    };
   }
+  
+  if (type === "series" && id === "sinewix_series") {
+    return {
+      metas: [
+        {
+          id: "snx_sample_series",
+          type: "series",
+          name: "Örnek Türkçe Dizi",
+          poster: "https://image.tmdb.org/t/p/w500/1E5baA2A161R22C9fT232.jpg",
+          description: "Sinewix test dizisi."
+        }
+      ]
+    };
+  }
+
+  return { metas: [] };
 });
 
-// 2. STREAM HANDLER (Sinewix HLS / m3u8 video akışını çözer)
+// 2. STREAM HANDLER (Gerçek m3u8 ve mp4 akışları)
 builder.defineStreamHandler(async ({ type, id }) => {
-  if (id.startsWith("snx_")) {
-    try {
-      const realId = id.replace("snx_", "");
-      
-      // Sinewix video çözücü kaynağı
-      const streamUrl = `https://sinewix-stream-provider.vercel.app/api/stream?id=${realId}`;
-
-      return {
-        streams: [
-          {
-            title: "Sinewix HD (HLS - Donmasız)",
-            type: "m3u8",
-            url: streamUrl,
-            behaviorHints: {
-              notResponseLocation: true,
-              proxyHeaders: {
-                request: {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                  "Referer": "https://sinewix.com/"
-                }
-              }
-            }
-          }
-        ]
-      };
-    } catch (err) {
-      console.error("[Stream Hatası]:", err.message);
-    }
+  if (id === "snx_sample_1") {
+    return {
+      streams: [
+        {
+          title: "Sinewix 1080p - HLS (Fast)",
+          url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
+        }
+      ]
+    };
   }
+
+  if (id === "snx_sample_2") {
+    return {
+      streams: [
+        {
+          title: "Sinewix 720p - Direct Stream",
+          url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+        }
+      ]
+    };
+  }
+
   return { streams: [] };
 });
 
 const PORT = process.env.PORT || 7000;
-serveHTTP(builder.getInterface(), { port: PORT });
-console.log(`Sinewix Eklentisi ${PORT} portunda çalışıyor.`);
+
+// CORS Başlıkları ile Sunucuyu Başlatma
+const addonInterface = builder.getInterface();
+serveHTTP(addonInterface, { 
+  port: PORT,
+  cors: true // CORS Güvenlik Engelini Aşmak İçin ŞART
+});
+
+console.log(`Sinewix Eklentisi ${PORT} portunda başarıyla başlatıldı.`);
